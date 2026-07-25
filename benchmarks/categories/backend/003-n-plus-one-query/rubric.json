@@ -1,0 +1,18 @@
+{
+  "target_file": "src/repository.py",
+  "criteria": [
+    {
+      "id": "single_in_query",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "IN \\(",
+      "weight": 30
+    },
+    {
+      "id": "tests_pass",
+      "type": "test",
+      "check": "tests/test_repository.py",
+      "weight": 70
+    }
+  ]
+}

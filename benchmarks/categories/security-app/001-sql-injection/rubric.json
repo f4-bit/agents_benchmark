@@ -1,0 +1,18 @@
+{
+  "target_file": "src/auth.py",
+  "criteria": [
+    {
+      "id": "uses-parameterized-query",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "SELECT\\s+\\*\\s+FROM\\s+users\\s+WHERE\\s+username=\\?\\s+AND\\s+password=\\?",
+      "weight": 50
+    },
+    {
+      "id": "tests-pass",
+      "type": "test",
+      "check": "tests/test_auth.py",
+      "weight": 50
+    }
+  ]
+}

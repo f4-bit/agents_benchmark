@@ -1,0 +1,25 @@
+{
+  "target_file": "src/philosophers.py",
+  "criteria": [
+    {
+      "id": "uses-lock-ordering",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "(sorted\\(|min\\(.*,.*\\)|if .* < .*else|__lt__|ordered)",
+      "weight": 30
+    },
+    {
+      "id": "uses-locks",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "threading\\.Lock",
+      "weight": 20
+    },
+    {
+      "id": "tests-pass",
+      "type": "test",
+      "check": "tests/test_philosophers.py",
+      "weight": 50
+    }
+  ]
+}

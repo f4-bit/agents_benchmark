@@ -1,0 +1,18 @@
+{
+  "target_file": "src/files.py",
+  "criteria": [
+    {
+      "id": "uses-commonpath-check",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "os\\.path\\.commonpath",
+      "weight": 50
+    },
+    {
+      "id": "tests-pass",
+      "type": "test",
+      "check": "tests/test_files.py",
+      "weight": 50
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "target_file": "src/config.py",
+  "criteria": [
+    {
+      "id": "rejects-default-secret",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "(?i)secret_key.*[\"']changeme[\"']|[\"']changeme[\"'].*secret_key|DEFAULT_SECRET|secret_key.*==",
+      "weight": 25
+    },
+    {
+      "id": "rejects-wildcard-hosts",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "(?i)allowed_hosts.*[\"']\\*[\"']|[\"']\\*[\"'].*allowed_hosts",
+      "weight": 25
+    },
+    {
+      "id": "validates-debug-flag",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "(?i)debug.*False|debug.*==|if.*debug",
+      "weight": 10
+    },
+    {
+      "id": "config-tests-pass",
+      "type": "test",
+      "check": "tests/test_config.py",
+      "weight": 40
+    }
+  ]
+}

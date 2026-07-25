@@ -1,0 +1,25 @@
+{
+  "target_file": "src/handler.py",
+  "criteria": [
+    {
+      "id": "raises_value_error",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "raise ValueError",
+      "weight": 25
+    },
+    {
+      "id": "validates_age",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "age\\s*<\\s*0",
+      "weight": 25
+    },
+    {
+      "id": "tests_pass",
+      "type": "test",
+      "check": "tests/test_handler.py",
+      "weight": 50
+    }
+  ]
+}

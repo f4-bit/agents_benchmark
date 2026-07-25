@@ -1,0 +1,18 @@
+{
+  "target_file": "src/reader.py",
+  "criteria": [
+    {
+      "id": "uses_with_statement",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "with open\\(",
+      "weight": 30
+    },
+    {
+      "id": "test_reader_closes_file",
+      "type": "test",
+      "check": "tests/test_reader.py",
+      "weight": 70
+    }
+  ]
+}

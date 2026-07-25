@@ -1,0 +1,18 @@
+{
+  "target_file": "src/counter.py",
+  "criteria": [
+    {
+      "id": "uses_threading_lock",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "threading\\.Lock\\(",
+      "weight": 30
+    },
+    {
+      "id": "test_counter_thread_safety",
+      "type": "test",
+      "check": "tests/test_counter.py",
+      "weight": 70
+    }
+  ]
+}

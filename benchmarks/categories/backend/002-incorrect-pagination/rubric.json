@@ -1,0 +1,18 @@
+{
+  "target_file": "src/pagination.py",
+  "criteria": [
+    {
+      "id": "uses_one_indexed_slice",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "\\(page\\s*-\\s*1\\)\\s*\\*\\s*page_size",
+      "weight": 30
+    },
+    {
+      "id": "tests_pass",
+      "type": "test",
+      "check": "tests/test_pagination.py",
+      "weight": 70
+    }
+  ]
+}

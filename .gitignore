@@ -1,0 +1,14 @@
+.opencode/
+.pytest_cache/
+.venv/
+__pycache__/
+openspec/
+*.log
+benchmarks/results/
+*.egg-info/
+build/
+dist/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/

@@ -1,0 +1,190 @@
+{
+  "version": "1.0.0",
+  "description": "Benchmark suite for evaluating AI coding systems deterministically.",
+  "defaults": {
+    "timeouts": {
+      "easy": 300,
+      "medium": 1200,
+      "hard": 2400
+    },
+    "weights": {
+      "tests": 0.5,
+      "diff": 0.3,
+      "rubric": 0.2
+    }
+  },
+  "categories": {
+    "bug-hunt": {
+      "status": "active",
+      "eval_mode": "deterministic",
+      "weights": {
+        "tests": 0.6,
+        "diff": 0.25,
+        "rubric": 0.15
+      },
+      "tasks": [
+        {
+          "id": "001-race-condition-counter",
+          "name": "Race condition in shared counter",
+          "difficulty": "easy",
+          "timeout": 300,
+          "status": "active"
+        },
+        {
+          "id": "002-off-by-one-loop",
+          "name": "Off-by-one error in loop",
+          "difficulty": "easy",
+          "timeout": 300,
+          "status": "active"
+        },
+        {
+          "id": "003-memory-leak-generator",
+          "name": "Resource leak in generator",
+          "difficulty": "medium",
+          "timeout": 1200,
+          "status": "active"
+        }
+      ]
+    },
+    "backend": {
+      "status": "active",
+      "eval_mode": "deterministic",
+      "weights": {
+        "tests": 0.5,
+        "diff": 0.3,
+        "rubric": 0.2
+      },
+      "tasks": [
+        {
+          "id": "001-missing-input-validation",
+          "name": "Missing input validation on API endpoint",
+          "difficulty": "easy",
+          "timeout": 300,
+          "status": "active"
+        },
+        {
+          "id": "002-incorrect-pagination",
+          "name": "Incorrect pagination logic",
+          "difficulty": "medium",
+          "timeout": 1200,
+          "status": "active"
+        },
+        {
+          "id": "003-n-plus-one-query",
+          "name": "N+1 query problem",
+          "difficulty": "medium",
+          "timeout": 1200,
+          "status": "active"
+        }
+      ]
+    },
+    "concurrent-code": {
+      "status": "active",
+      "eval_mode": "deterministic",
+      "weights": {
+        "tests": 0.6,
+        "diff": 0.2,
+        "rubric": 0.2
+      },
+      "tasks": [
+        {
+          "id": "001-deadlock-philosophers",
+          "name": "Dining philosophers deadlock",
+          "difficulty": "medium",
+          "timeout": 1200,
+          "status": "active"
+        },
+        {
+          "id": "002-atomic-counter-bug",
+          "name": "Non-atomic shared counter",
+          "difficulty": "easy",
+          "timeout": 300,
+          "status": "active"
+        },
+        {
+          "id": "003-producer-consumer-deadlock",
+          "name": "Producer-consumer deadlock",
+          "difficulty": "hard",
+          "timeout": 2400,
+          "status": "active"
+        }
+      ]
+    },
+    "security-app": {
+      "status": "active",
+      "eval_mode": "deterministic",
+      "weights": {
+        "tests": 0.3,
+        "diff": 0.2,
+        "rubric": 0.5
+      },
+      "tasks": [
+        {
+          "id": "001-sql-injection",
+          "name": "SQL injection vulnerability",
+          "difficulty": "easy",
+          "timeout": 300,
+          "status": "active"
+        },
+        {
+          "id": "002-path-traversal",
+          "name": "Path traversal vulnerability",
+          "difficulty": "medium",
+          "timeout": 1200,
+          "status": "active"
+        },
+        {
+          "id": "003-weak-password-hash",
+          "name": "Weak password hashing",
+          "difficulty": "easy",
+          "timeout": 300,
+          "status": "active"
+        }
+      ]
+    },
+    "cybersecurity": {
+      "status": "active",
+      "eval_mode": "deterministic",
+      "weights": {
+        "tests": 0.4,
+        "diff": 0.2,
+        "rubric": 0.4
+      },
+      "tasks": [
+        {
+          "id": "001-insecure-config",
+          "name": "Insecure default configuration",
+          "difficulty": "easy",
+          "timeout": 300,
+          "status": "active"
+        },
+        {
+          "id": "002-ssrf-vulnerability",
+          "name": "Server-side request forgery vulnerability",
+          "difficulty": "hard",
+          "timeout": 2400,
+          "status": "active"
+        },
+        {
+          "id": "003-sensitive-data-exposure",
+          "name": "Sensitive data exposure in API response",
+          "difficulty": "medium",
+          "timeout": 1200,
+          "status": "active"
+        }
+      ]
+    },
+    "architecture": {
+      "status": "deferred",
+      "eval_mode": "llm-judge",
+      "description": "System design and architecture evaluation (Phase 2).",
+      "tasks": []
+    },
+    "trade-off-evaluation": {
+      "status": "deferred",
+      "eval_mode": "llm-judge",
+      "description": "Engineering trade-off analysis (Phase 2).",
+      "tasks": []
+    }
+  }
+}

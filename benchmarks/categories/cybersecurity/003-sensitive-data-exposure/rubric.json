@@ -1,0 +1,18 @@
+{
+  "target_file": "src/serializer.py",
+  "criteria": [
+    {
+      "id": "uses-explicit-allowlist",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "(?i)PUBLIC_FIELDS|ALLOWED_FIELDS|allowlist|allowed_fields",
+      "weight": 30
+    },
+    {
+      "id": "serializer-tests-pass",
+      "type": "test",
+      "check": "tests/test_serializer.py",
+      "weight": 70
+    }
+  ]
+}

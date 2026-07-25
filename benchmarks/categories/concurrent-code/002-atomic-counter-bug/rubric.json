@@ -1,0 +1,25 @@
+{
+  "target_file": "src/atomic_counter.py",
+  "criteria": [
+    {
+      "id": "uses-threading-lock",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "threading\\.Lock",
+      "weight": 30
+    },
+    {
+      "id": "uses-lock-context",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "with (self\\._lock|self\\.lock|lock)",
+      "weight": 20
+    },
+    {
+      "id": "tests-pass",
+      "type": "test",
+      "check": "tests/test_atomic_counter.py",
+      "weight": 50
+    }
+  ]
+}

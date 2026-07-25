@@ -1,0 +1,68 @@
+# Benchmark target registry.
+#
+# Each target is a system under evaluation (raw model, opencode flow, custom
+# agent pipeline, etc.). The benchmark runner invokes targets via a uniform
+# CLI contract: the command defined here is appended with:
+#   --prompt <prompt-file>
+#   --workspace <workspace-dir>
+#   --output <output-file>
+#   --no-interactive
+#
+# The target MUST write its response to the --output file. If it does not, the
+# runner falls back to stdout.
+
+targets:
+  - id: opencode-glm-default
+    type: cli
+    command:
+      - python
+      - benchmarks/opencode_cli_wrapper.py
+      - --model
+      - opencode-go/glm-5.2
+    timeout: 1200
+    metadata:
+      provider: opencode
+      model: opencode-go/glm-5.2
+      description: Default opencode agent with GLM 5.2 model, wrapped for --no-interactive support.
+
+  - id: opencode-deepseek-default
+    type: cli
+    command:
+      - python
+      - benchmarks/opencode_cli_wrapper.py
+      - --model
+      - opencode-go/deepseek-v4-pro
+    timeout: 1200
+    metadata:
+      provider: opencode
+      model: opencode-go/deepseek-v4-pro
+      description: Default opencode agent with DeepSeek V4 Pro model, wrapped for --no-interactive support.
+
+  - id: mock-reference
+    type: cli
+    command:
+      - python
+      - benchmarks/tests/mock_target.py
+    timeout: 30
+    metadata:
+      provider: internal
+      description: Mock target that emits the reference solution (for testing only).
+
+  # ---------------------------------------------------------------------------
+  # Stub entries for future adapter types. Invoking these raises
+  # "not implemented in Phase 1".
+  # ---------------------------------------------------------------------------
+  # - id: example-api-target
+  #   type: api
+  #   provider: openai
+  #   model: gpt-4o
+  #   timeout: 600
+  #   metadata:
+  #     description: Example raw API target (Phase 2).
+  #
+  # - id: example-http-target
+  #   type: http
+  #   url: http://localhost:8080/v1/judge
+  #   timeout: 600
+  #   metadata:
+  #     description: Example HTTP service target (Phase 2).

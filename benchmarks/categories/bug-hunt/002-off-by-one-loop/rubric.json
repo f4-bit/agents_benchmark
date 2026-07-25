@@ -1,0 +1,18 @@
+{
+  "target_file": "src/processor.py",
+  "criteria": [
+    {
+      "id": "correct_loop_bound",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "range\\(len\\(items\\)\\)",
+      "weight": 30
+    },
+    {
+      "id": "test_processor_returns_all_elements",
+      "type": "test",
+      "check": "tests/test_processor.py",
+      "weight": 70
+    }
+  ]
+}

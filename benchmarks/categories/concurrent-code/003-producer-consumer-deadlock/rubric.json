@@ -1,0 +1,25 @@
+{
+  "target_file": "src/producer_consumer.py",
+  "criteria": [
+    {
+      "id": "uses-threading-condition",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "threading\\.Condition",
+      "weight": 30
+    },
+    {
+      "id": "uses-condition-context",
+      "type": "pattern",
+      "check": "output_contains",
+      "pattern": "with .*cond",
+      "weight": 20
+    },
+    {
+      "id": "tests-pass",
+      "type": "test",
+      "check": "tests/test_producer_consumer.py",
+      "weight": 50
+    }
+  ]
+}
