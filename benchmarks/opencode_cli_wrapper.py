@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
-"""opencode CLI wrapper that adds ``--no-interactive`` / ``-n`` support.
+"""opencode CLI wrapper that translates the benchmark contract to ``opencode run``.
 
-The distributed ``opencode`` binary is a compiled executable, so its argument
-parser cannot be modified directly. This wrapper provides the same flag surface:
+The distributed ``opencode`` binary is a compiled executable. Its ``run``
+subcommand accepts a message and an ``--auto`` flag, but the benchmark runner
+speaks a different contract: ``--prompt <file> --workspace <dir>
+--output <file> --no-interactive``. This wrapper translates between the two.
 
-* ``--no-interactive`` / ``-n`` suppresses all interactive prompts.
-* When the flag is present, stdin is closed, stdout/stderr are monitored for
-  interactive prompts, and the process is killed if one is detected.
-* Without the flag, arguments are passed through unchanged.
+When the non-interactive flag is present:
 
-The wrapper also honours the ``OPENCODE_NON_INTERACTIVE=1`` environment
-variable as an alias for the flag.
+* Read the benchmark prompt, workspace, and output path.
+* Locate the target file inside ``<workspace>/src/`` (heuristic).
+* Invoke ``opencode run <task-message> --auto`` with a clear instruction to
+  write the complete fixed source file to the target path.
+* Copy the modified target file to the output path.
+* Fall back to extracting a markdown code block from stdout if the target file
+  was not changed.
+* Return opencode's exit code (or 1 on timeout).
+
+Without the flag, arguments are passed through unchanged.
 """
 
 from __future__ import annotations
@@ -22,13 +29,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Bound each individual opencode task invocation. The benchmark runner will
+# enforce its own timeout as well.
+DEFAULT_TIMEOUT_SECONDS = 60
 
 # Patterns that indicate an interactive prompt in opencode output.
 INTERACTIVE_PROMPT_PATTERNS = [
     re.compile(r"apply\s+this\s+change\?", re.IGNORECASE),
     re.compile(r"continue\?", re.IGNORECASE),
     re.compile(r"confirm", re.IGNORECASE),
-    re.compile(r"\?\s*\[Y/n\]", re.IGNORECASE),
+    re.compile(r"\?\s*\[Y/n]", re.IGNORECASE),
     re.compile(r"\?\s*\(y/N\)", re.IGNORECASE),
     re.compile(r"\(yes/no\)", re.IGNORECASE),
 ]
@@ -63,10 +73,16 @@ def _find_opencode_binary() -> str:
     raise RuntimeError("opencode binary not found on PATH")
 
 
-def _strip_no_interactive(args: list[str]) -> tuple[list[str], bool]:
-    """Remove --no-interactive / -n from args and return the flag state."""
+def _parse_contract_args(args: list[str]) -> tuple[dict[str, str | None], list[str], bool]:
+    """Parse the benchmark contract out of the argument list.
+
+    Returns a mapping of ``prompt``/``workspace``/``output`` values (or
+    ``None`` if missing), the remaining pass-through arguments, and the
+    non-interactive flag state.
+    """
     env_flag = os.environ.get("OPENCODE_NON_INTERACTIVE", "") == "1"
     result = []
+    contract: dict[str, str | None] = {"prompt": None, "workspace": None, "output": None}
     flag = env_flag
     i = 0
     while i < len(args):
@@ -75,9 +91,14 @@ def _strip_no_interactive(args: list[str]) -> tuple[list[str], bool]:
             flag = True
             i += 1
             continue
+        if arg in ("--prompt", "--workspace", "--output") and i + 1 < len(args):
+            key = arg.lstrip("-")
+            contract[key] = args[i + 1]
+            i += 2
+            continue
         result.append(arg)
         i += 1
-    return result, flag
+    return contract, result, flag
 
 
 def _detect_interactive_prompt(text: str) -> bool:
@@ -85,45 +106,193 @@ def _detect_interactive_prompt(text: str) -> bool:
     return any(pattern.search(text) for pattern in INTERACTIVE_PROMPT_PATTERNS)
 
 
+def _select_target_file(workspace_dir: Path) -> Path | None:
+    """Pick a target file inside ``workspace_dir/src/`` using a heuristic.
+
+    * If exactly one ``.py`` file exists anywhere under ``src/``, use it.
+    * If multiple exist, prefer the most recently modified one. If several
+      share the latest mtime, prefer a file directly under ``src/``.
+    * If no ``.py`` files exist, return ``None``.
+    """
+    src_dir = workspace_dir / "src"
+    if not src_dir.exists():
+        return None
+
+    py_files = sorted(src_dir.rglob("*.py"))
+    if not py_files:
+        return None
+
+    if len(py_files) == 1:
+        return py_files[0]
+
+    # Multiple files: pick the most recently modified one, preferring top-level
+    # files when mtimes are equal.
+    def sort_key(path: Path) -> tuple[float, int]:
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+        top_level = 1 if path.parent == src_dir else 0
+        return (-mtime, top_level)
+
+    py_files.sort(key=sort_key)
+    return py_files[0]
+
+
+def _extract_markdown_code_block(text: str) -> str | None:
+    """Extract the contents of the first fenced markdown code block."""
+    match = re.search(r"```(?:\w+)?\n(.*?)\n```", text, re.DOTALL)
+    if match:
+        return match.group(1)
+    return None
+
+
+def _build_task_message(workspace_dir: Path, prompt: str, target_file: Path) -> str:
+    """Build a concise instruction message for opencode."""
+    return (
+        "You are in the workspace "
+        f"{workspace_dir.resolve()}.\n\n"
+        "Task:\n"
+        f"{prompt}\n\n"
+        "Edit the file "
+        f"{target_file.resolve()} "
+        "to implement the required fix. "
+        "Write the complete fixed source file to that exact path. "
+        "Do not ask questions; do not output explanations."
+    )
+
+
 def _run_interactive(binary: str, args: list[str]) -> int:
     """Pass through to opencode without non-interactive enforcement."""
     return subprocess.call([binary, *args])
 
 
-def _run_non_interactive(binary: str, args: list[str]) -> int:
-    """Run opencode with closed stdin and prompt detection."""
+def _run_non_interactive(
+    binary: str,
+    contract: dict[str, str | None],
+    pass_through_args: list[str],
+) -> int:
+    """Translate the benchmark contract and run opencode headlessly."""
+    prompt_path = contract["prompt"]
+    workspace_path = contract["workspace"]
+    output_path = contract["output"]
+    if not prompt_path or not workspace_path or not output_path:
+        sys.stderr.write(
+            "non-interactive mode requires --prompt, --workspace, and --output\n"
+        )
+        return 1
+
+    prompt_file = Path(prompt_path)
+    workspace_dir = Path(workspace_path)
+    output_file = Path(output_path)
+
+    if not prompt_file.exists():
+        sys.stderr.write(f"prompt file not found: {prompt_path}\n")
+        return 1
+
+    if not workspace_dir.exists():
+        sys.stderr.write(f"workspace directory not found: {workspace_path}\n")
+        return 1
+
+    prompt = prompt_file.read_text(encoding="utf-8")
+    target_file = _select_target_file(workspace_dir)
+
+    if target_file is None:
+        # No Python source to edit; the best we can do is ask opencode to
+        # produce the answer and write it directly to the output file.
+        message = (
+            "Task:\n"
+            f"{prompt}\n\n"
+            "Write the complete solution. "
+            "Do not ask questions; do not output explanations."
+        )
+        snapshot = None
+    else:
+        message = _build_task_message(workspace_dir, prompt, target_file)
+        try:
+            snapshot = target_file.read_text(encoding="utf-8")
+        except OSError:
+            snapshot = None
+
+    cmd = [
+        binary,
+        "run",
+        message,
+        "--auto",
+        *pass_through_args,
+    ]
+
+    timeout = int(os.environ.get("OPENCODE_WRAPPER_TIMEOUT", DEFAULT_TIMEOUT_SECONDS))
+
     process = subprocess.Popen(
-        [binary, *args],
+        cmd,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
 
-    captured = []
-    if process.stdout is not None:
-        for line in process.stdout:
-            captured.append(line)
-            sys.stdout.write(line)
-            sys.stdout.flush()
-            if _detect_interactive_prompt(line):
-                process.kill()
-                process.wait()
-                sys.stderr.write(
-                    "user input requested in non-interactive mode\n"
-                )
-                return 1
+    timed_out = False
+    try:
+        stdout, _ = process.communicate(timeout=timeout)
+        return_code = process.returncode
+    except subprocess.TimeoutExpired:
+        process.kill()
+        try:
+            stdout, _ = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            stdout = ""
+        timed_out = True
+        return_code = 1
 
-    return_code = process.wait()
+    sys.stdout.write(stdout)
+    sys.stdout.flush()
+
+    if _detect_interactive_prompt(stdout):
+        sys.stderr.write("user input requested in non-interactive mode\n")
+        return 1
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    if target_file is not None:
+        try:
+            after_content = target_file.read_text(encoding="utf-8")
+        except OSError:
+            after_content = ""
+        if after_content and (snapshot is None or after_content != snapshot):
+            output_file.write_text(after_content, encoding="utf-8")
+            return return_code
+
+    # Target file was not modified or no Python source was found. Try to
+    # extract a code block from stdout.
+    code_block = _extract_markdown_code_block(stdout)
+    if code_block:
+        output_file.write_text(code_block, encoding="utf-8")
+    elif stdout.strip():
+        output_file.write_text(stdout, encoding="utf-8")
+    else:
+        output_file.write_text("", encoding="utf-8")
+
+    if timed_out:
+        return 1
     return return_code
 
 
 def main() -> int:
-    args, non_interactive = _strip_no_interactive(sys.argv[1:])
+    # Ensure UTF-8-safe output on Windows consoles so progress characters from
+    # the opencode binary do not crash the wrapper.
+    if sys.stdout is not None and hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if sys.stderr is not None and hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+    args = sys.argv[1:]
+    contract, pass_through, non_interactive = _parse_contract_args(args)
     binary = _find_opencode_binary()
 
     if non_interactive:
-        return _run_non_interactive(binary, args)
+        return _run_non_interactive(binary, contract, pass_through)
     return _run_interactive(binary, args)
 
 
