@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
 from benchmarks.eval.diff_engine import compute_ast_diff, evaluate_diff
 from benchmarks.eval.rubric_checker import evaluate_rubric
 from benchmarks.eval.scorer import score_task
+from benchmarks.eval.test_runner import _parse_summary, run_pytest
 
 
 def test_score_task_all_layers_perfect() -> None:
@@ -202,3 +204,114 @@ def test_determinism(tmp_path: Path) -> None:
 
     source = "def add(a, b):\n    return a + b\n"
     assert compute_ast_diff(source, source) == compute_ast_diff(source, source)
+
+
+def test_ast_diff_both_unparseable_returns_zero() -> None:
+    pct = compute_ast_diff("def foo(", "def bar(")
+    assert pct == 0.0
+
+
+def test_ast_diff_empty_valid_modules_identical() -> None:
+    # An empty string parses to a Module with no body, so the node lists are
+    # both ["Module"].
+    assert compute_ast_diff("", "") == 100.0
+
+
+def test_score_task_partial_weights_missing_rubric_key() -> None:
+    score, status, adjusted = score_task(
+        tests_pct=80.0,
+        has_tests=True,
+        diff_pct=90.0,
+        has_reference=True,
+        rubric_pct=100.0,
+        has_rubric=True,
+        weights={"tests": 0.6, "diff": 0.25},
+    )
+    # Missing rubric key defaults to 0.0, so it is included with zero weight.
+    assert adjusted == pytest.approx(
+        {"tests": 0.705882, "diff": 0.294118, "rubric": 0.0}, abs=1e-5
+    )
+    assert score == pytest.approx(0.705882 * 80.0 + 0.294118 * 90.0, abs=1e-5)
+
+
+def test_evaluate_rubric_malformed_json_returns_no_rubric(tmp_path: Path) -> None:
+    rubric_path = tmp_path / "rubric.json"
+    rubric_path.write_text("{ not valid json", encoding="utf-8")
+    result = evaluate_rubric(rubric_path, "", tmp_path)
+    assert result["has_rubric"] is False
+    assert result["rubric_pct"] == 0.0
+
+
+def test_evaluate_rubric_invalid_regex_marks_unmatched(tmp_path: Path) -> None:
+    rubric_path = tmp_path / "rubric.json"
+    rubric_path.write_text(
+        json.dumps(
+            {
+                "criteria": [
+                    {
+                        "id": "bad_regex",
+                        "type": "pattern",
+                        "check": "output_contains",
+                        "pattern": "(unclosed",
+                        "weight": 100,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = evaluate_rubric(rubric_path, "anything", tmp_path)
+    assert result["rubric_pct"] == 0.0
+    assert result["criteria"][0]["matched"] is False
+    assert "invalid regex" in result["criteria"][0]["reason"]
+
+
+def test_parse_summary_passed_failed() -> None:
+    stdout = "============================== 3 passed, 2 failed in 0.12s ==============================="
+    passed, total = _parse_summary(stdout)
+    assert passed == 3
+    assert total == 5
+
+
+def test_parse_summary_no_tests_ran() -> None:
+    passed, total = _parse_summary("no tests ran in 0.00s")
+    assert passed == 0
+    assert total == 0
+
+
+def test_parse_summary_with_skipped_and_deselected() -> None:
+    stdout = "1 passed, 2 skipped, 3 deselected in 0.05s"
+    passed, total = _parse_summary(stdout)
+    # deselected are matched but not counted; skipped is not counted.
+    assert passed == 1
+    assert total == 1
+
+
+def test_run_pytest_timeout_records_pytest_timeout(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "src").mkdir()
+    (workspace / "tests").mkdir()
+    (workspace / "tests" / "test_slow.py").write_text(
+        "import time\ndef test_slow(): time.sleep(30)", encoding="utf-8"
+    )
+
+    result = run_pytest(workspace, timeout=1)
+    assert result["pytest_timeout"] is True
+    assert result["has_tests"] is False
+    assert result["tests_pct"] == 0.0
+
+
+def test_run_pytest_missing_pytest_records_unavailable(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "src").mkdir()
+    (workspace / "tests").mkdir()
+    (workspace / "tests" / "test_dummy.py").write_text("def test_dummy(): pass", encoding="utf-8")
+
+    with mock.patch("subprocess.run", side_effect=FileNotFoundError("no pytest")):
+        result = run_pytest(workspace, timeout=10)
+    assert result["pytest_unavailable"] is True
+    assert result["has_tests"] is False
+    assert result["tests_pct"] == 0.0
+

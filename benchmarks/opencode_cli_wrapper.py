@@ -22,6 +22,7 @@ Without the flag, arguments are passed through unchanged.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -29,18 +30,17 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Bound each individual opencode task invocation. The benchmark runner will
-# enforce its own timeout as well.
-DEFAULT_TIMEOUT_SECONDS = 60
-
 # Patterns that indicate an interactive prompt in opencode output.
+# Anchored with word boundaries to avoid false positives on ordinary assistant
+# prose (e.g., "I can confirm that...").
 INTERACTIVE_PROMPT_PATTERNS = [
-    re.compile(r"apply\s+this\s+change\?", re.IGNORECASE),
-    re.compile(r"continue\?", re.IGNORECASE),
-    re.compile(r"confirm", re.IGNORECASE),
-    re.compile(r"\?\s*\[Y/n]", re.IGNORECASE),
-    re.compile(r"\?\s*\(y/N\)", re.IGNORECASE),
-    re.compile(r"\(yes/no\)", re.IGNORECASE),
+    re.compile(r"apply\s+changes?\s*\?\s*$", re.IGNORECASE),
+    re.compile(r"apply\s+this\s+change\s*\?\s*$", re.IGNORECASE),
+    re.compile(r"continue\s*\?\s*$", re.IGNORECASE),
+    re.compile(r"\byes/no\b", re.IGNORECASE),
+    re.compile(r"\?\s*\[y/n\]", re.IGNORECASE),
+    re.compile(r"\?\s*\(y/n\)", re.IGNORECASE),
+    re.compile(r"\[y/n\]", re.IGNORECASE),
 ]
 
 
@@ -106,7 +106,26 @@ def _detect_interactive_prompt(text: str) -> bool:
     return any(pattern.search(text) for pattern in INTERACTIVE_PROMPT_PATTERNS)
 
 
-def _select_target_file(workspace_dir: Path) -> Path | None:
+def _resolve_target_file(workspace_dir: Path, rubric_path: Path | None) -> Path | None:
+    """Resolve the target file from the rubric or a heuristic.
+
+    The rubric's ``target_file`` is the authoritative source. When no rubric is
+    available, fall back to selecting the newest ``.py`` file under ``src/``.
+    """
+    if rubric_path is not None and rubric_path.exists():
+        try:
+            rubric = json.loads(rubric_path.read_text(encoding="utf-8"))
+            target_file = rubric.get("target_file")
+            if target_file:
+                candidate = workspace_dir / target_file
+                if candidate.exists():
+                    return candidate
+        except (json.JSONDecodeError, OSError):
+            pass
+    return _select_target_file_heuristic(workspace_dir)
+
+
+def _select_target_file_heuristic(workspace_dir: Path) -> Path | None:
     """Pick a target file inside ``workspace_dir/src/`` using a heuristic.
 
     * If exactly one ``.py`` file exists anywhere under ``src/``, use it.
@@ -141,7 +160,7 @@ def _select_target_file(workspace_dir: Path) -> Path | None:
 
 def _extract_markdown_code_block(text: str) -> str | None:
     """Extract the contents of the first fenced markdown code block."""
-    match = re.search(r"```(?:\w+)?\n(.*?)\n```", text, re.DOTALL)
+    match = re.search(r"```(?:\w+)?\n(.*?)\n?```", text, re.DOTALL)
     if match:
         return match.group(1)
     return None
@@ -194,8 +213,9 @@ def _run_non_interactive(
         sys.stderr.write(f"workspace directory not found: {workspace_path}\n")
         return 1
 
-    prompt = prompt_file.read_text(encoding="utf-8")
-    target_file = _select_target_file(workspace_dir)
+    prompt = prompt_file.read_text(encoding="utf-8-sig")
+    rubric_path = prompt_file.parent / "rubric.json"
+    target_file = _resolve_target_file(workspace_dir, rubric_path)
 
     if target_file is None:
         # No Python source to edit; the best we can do is ask opencode to
@@ -219,10 +239,10 @@ def _run_non_interactive(
         "run",
         message,
         "--auto",
+        "--dir",
+        str(workspace_dir),
         *pass_through_args,
     ]
-
-    timeout = int(os.environ.get("OPENCODE_WRAPPER_TIMEOUT", DEFAULT_TIMEOUT_SECONDS))
 
     process = subprocess.Popen(
         cmd,
@@ -235,10 +255,13 @@ def _run_non_interactive(
     )
 
     timed_out = False
+    detected_prompt = False
     try:
-        stdout, _ = process.communicate(timeout=timeout)
+        stdout, _ = process.communicate(timeout=None)
         return_code = process.returncode
     except subprocess.TimeoutExpired:
+        # This should normally not fire because the runner kills the wrapper
+        # process, but keep it as a safety net.
         process.kill()
         try:
             stdout, _ = process.communicate(timeout=5)
@@ -251,31 +274,41 @@ def _run_non_interactive(
     sys.stdout.flush()
 
     if _detect_interactive_prompt(stdout):
+        detected_prompt = True
         sys.stderr.write("user input requested in non-interactive mode\n")
-        return 1
+        return_code = 1
+
+    # Always write the output before returning, even if we detected an
+    # interactive prompt or a non-zero exit code. The runner may still inspect the
+    # edited file for partial progress.
     output_file.parent.mkdir(parents=True, exist_ok=True)
+    written = False
+    try:
+        if target_file is not None:
+            try:
+                after_content = target_file.read_text(encoding="utf-8")
+            except OSError:
+                after_content = ""
+            if after_content and (snapshot is None or after_content != snapshot):
+                output_file.write_text(after_content, encoding="utf-8")
+                written = True
 
-    if target_file is not None:
-        try:
-            after_content = target_file.read_text(encoding="utf-8")
-        except OSError:
-            after_content = ""
-        if after_content and (snapshot is None or after_content != snapshot):
-            output_file.write_text(after_content, encoding="utf-8")
-            return return_code
+        if not written:
+            # Target file was not modified or no Python source was found. Try to
+            # extract a code block from stdout.
+            code_block = _extract_markdown_code_block(stdout)
+            if code_block:
+                output_file.write_text(code_block, encoding="utf-8")
+            elif stdout.strip():
+                output_file.write_text(stdout, encoding="utf-8")
+            else:
+                output_file.write_text("", encoding="utf-8")
+    except OSError as exc:
+        sys.stderr.write(f"failed to write output file {output_path}: {exc}\n")
+        return_code = 1
 
-    # Target file was not modified or no Python source was found. Try to
-    # extract a code block from stdout.
-    code_block = _extract_markdown_code_block(stdout)
-    if code_block:
-        output_file.write_text(code_block, encoding="utf-8")
-    elif stdout.strip():
-        output_file.write_text(stdout, encoding="utf-8")
-    else:
-        output_file.write_text("", encoding="utf-8")
-
-    if timed_out:
-        return 1
+    if timed_out or detected_prompt:
+        return_code = 1
     return return_code
 
 

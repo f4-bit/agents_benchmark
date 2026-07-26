@@ -100,7 +100,8 @@ targets:
     type: cli
     command:
       - python
-      - {mock_target_script}
+      - -m
+      - benchmarks.tests.mock_target
     timeout: 10
 """,
             encoding="utf-8",
@@ -136,11 +137,13 @@ targets:
 
 def test_timeout_enforcement(tmp_path: Path) -> None:
     """A target that sleeps longer than the timeout is killed and marked TIMEOUT."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
     target = BenchmarkTarget(
         target_id="sleeper",
         target_type="cli",
         command=["python", "-c", "import time; time.sleep(30)"],
     )
-    result = target.invoke(tmp_path / "prompt.md", tmp_path / "workspace", tmp_path / "output.md", timeout=1)
+    result = target.invoke(tmp_path / "prompt.md", workspace, tmp_path / "output.md", timeout=1)
     assert result.status == "TIMEOUT"
     assert result.timed_out is True

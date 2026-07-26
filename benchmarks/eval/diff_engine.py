@@ -9,14 +9,18 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def _node_types(source: str) -> list[str]:
-    """Return the pre-order sequence of AST node type names for ``source``."""
+def _node_types(source: str) -> tuple[list[str], bool]:
+    """Return the breadth-first sequence of AST node type names for ``source``.
+
+    Returns a tuple of (node_types, parse_failed). ``parse_failed`` is True when
+    ``source`` could not be parsed.
+    """
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
         logger.warning("Cannot parse source for AST diff: %s", exc)
-        return []
-    return [type(node).__name__ for node in ast.walk(tree)]
+        return [], True
+    return [type(node).__name__ for node in ast.walk(tree)], False
 
 
 def _levenshtein(a: list[str], b: list[str]) -> int:
@@ -53,16 +57,22 @@ def compute_ast_diff(target_source: str, reference_source: str) -> float:
     functionally equivalent implementations with different variable names or
     formatting can still score highly.
     """
-    target_nodes = _node_types(target_source)
-    reference_nodes = _node_types(reference_source)
+    target_nodes, target_failed = _node_types(target_source)
+    reference_nodes, reference_failed = _node_types(reference_source)
 
     max_len = max(len(target_nodes), len(reference_nodes))
     if max_len == 0:
+        # If both sides failed to parse, they are not "identical"; they are
+        # both broken. If both parsed successfully to empty node lists (which is
+        # impossible for valid Python modules but possible for empty strings),
+        # treat them as identical.
+        if target_failed or reference_failed:
+            return 0.0
         return 100.0
 
     distance = _levenshtein(target_nodes, reference_nodes)
     similarity = 1.0 - (distance / max_len)
-    return max(0.0, similarity * 100.0)
+    return round(max(0.0, similarity * 100.0), 6)
 
 
 def evaluate_diff(workspace_dir: Path, target_file: str, expected_dir: Path) -> dict[str, object]:
@@ -79,8 +89,8 @@ def evaluate_diff(workspace_dir: Path, target_file: str, expected_dir: Path) -> 
         logger.warning("No reference solution found at %s", reference_file)
         return {"diff_pct": 0.0, "has_reference": False, "reference_file": None}
 
-    target_source = target_path.read_text(encoding="utf-8") if target_path.exists() else ""
-    reference_source = reference_file.read_text(encoding="utf-8")
+    target_source = target_path.read_text(encoding="utf-8", errors="replace") if target_path.exists() else ""
+    reference_source = reference_file.read_text(encoding="utf-8", errors="replace")
 
     diff_pct = compute_ast_diff(target_source, reference_source)
 

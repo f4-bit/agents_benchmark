@@ -1,4 +1,3 @@
-import pytest
 from repository import OrderRepository
 
 

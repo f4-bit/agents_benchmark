@@ -42,7 +42,8 @@ targets:
     type: cli
     command:
       - python
-      - benchmarks/tests/mock_target.py
+      - -m
+      - benchmarks.tests.mock_target
     timeout: 30
     metadata:
       provider: internal

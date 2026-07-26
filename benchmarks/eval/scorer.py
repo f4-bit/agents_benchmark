@@ -34,11 +34,11 @@ def _redistribute_weights(
     """
     available = {}
     if has_tests:
-        available["tests"] = weights["tests"]
+        available["tests"] = weights.get("tests", 0.0)
     if has_reference:
-        available["diff"] = weights["diff"]
+        available["diff"] = weights.get("diff", 0.0)
     if has_rubric:
-        available["rubric"] = weights["rubric"]
+        available["rubric"] = weights.get("rubric", 0.0)
 
     total = sum(available.values())
     if total == 0:

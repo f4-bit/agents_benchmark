@@ -30,7 +30,7 @@ benchmarks/categories/<category>/<task-id>/
 1. **Task ID**: kebab-case, unique across all categories. Use the format
    `NNN-short-description` (e.g. `001-race-condition-counter`).
 2. **Difficulty**: pick one of `easy`, `medium`, `hard`. Each active category
-   should have one task of each difficulty.
+    SHOULD cover a range of difficulties.
 3. **Bilingual prompt**: `prompt.md` must contain an English section followed
    by a Spanish section separated by `---`:
 

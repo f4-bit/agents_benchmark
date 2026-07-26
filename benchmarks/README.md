@@ -108,5 +108,7 @@ benchmarks/
   `--no-interactive` flag is implemented through a Python wrapper that
   enforces non-interactive behavior (closed stdin, prompt detection) and then
   delegates to the real binary.
-* The runner is intentionally dependency-light: only `pytest` and `PyYAML`
-  are required for the eval pipeline.
+* The runner's eval pipeline requires `pytest` and `pytest-timeout` as runtime
+  dependencies (not just development dependencies) because the runner shells out
+  to `python -m pytest` for every task. `PyYAML` is also required for parsing
+  `targets.yaml` and the manifest.

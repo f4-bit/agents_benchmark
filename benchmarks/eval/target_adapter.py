@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Repo root is two levels above benchmarks/eval/.
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 @dataclass
@@ -85,6 +89,9 @@ class BenchmarkTarget:
 
         logger.info("Invoking target '%s': %s", self.id, " ".join(cmd))
 
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(REPO_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+
         with subprocess.Popen(
             cmd,
             stdin=subprocess.DEVNULL,
@@ -93,10 +100,13 @@ class BenchmarkTarget:
             text=True,
             encoding="utf-8",
             errors="replace",
+            cwd=str(workspace_dir),
+            env=env,
         ) as proc:
             try:
                 stdout, stderr = proc.communicate(timeout=timeout)
                 output_content, status = self._read_output(output_path, stdout)
+                status = self._resolve_status(status, proc.returncode, output_content)
                 return InvocationResult(
                     exit_code=proc.returncode,
                     stdout=stdout,
@@ -132,10 +142,23 @@ class BenchmarkTarget:
                     timed_out=True,
                 )
 
+    def _resolve_status(self, read_status: str, exit_code: int, output_content: str) -> str:
+        """Combine output presence with the process exit code.
+
+        Empty output always yields NO_OUTPUT. A non-zero exit code yields ERROR
+        even when stdout is non-empty, so that crashed targets are not scored as
+        PASS.
+        """
+        if not output_content.strip():
+            return "NO_OUTPUT"
+        if exit_code != 0:
+            return "ERROR"
+        return "PASS"
+
     def _read_output(self, output_path: Path, stdout: str) -> tuple[str, str]:
         """Read the target's output file, falling back to stdout."""
-        if output_path.exists():
-            content = output_path.read_text(encoding="utf-8")
+        if output_path.is_file():
+            content = output_path.read_text(encoding="utf-8", errors="replace")
             if content.strip():
                 return content, "PASS"
 

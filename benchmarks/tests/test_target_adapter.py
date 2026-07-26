@@ -180,3 +180,138 @@ def test_cli_stdin_is_closed(temp_dir: Path) -> None:
     assert result.status == "PASS"
     # stdin is DEVNULL, so read() returns empty string.
     assert result.output_content == "''"
+
+
+def test_cli_non_zero_exit_with_stdout_is_error(temp_dir: Path) -> None:
+    prompt = temp_dir / "prompt.md"
+    prompt.write_text("input", encoding="utf-8")
+    output = temp_dir / "output.md"
+    workspace = temp_dir / "workspace"
+    workspace.mkdir()
+
+    target = BenchmarkTarget(
+        target_id="error-with-stdout",
+        target_type="cli",
+        command=["python", "-c", "import sys; print('I crashed'); sys.exit(1)"],
+    )
+    result = target.invoke(prompt, workspace, output, 5)
+    assert result.status == "ERROR"
+    assert result.exit_code == 1
+    assert result.output_content == "I crashed\n"
+
+
+def test_cli_zero_exit_no_output_is_no_output(temp_dir: Path) -> None:
+    prompt = temp_dir / "prompt.md"
+    prompt.write_text("input", encoding="utf-8")
+    output = temp_dir / "output.md"
+    workspace = temp_dir / "workspace"
+    workspace.mkdir()
+
+    target = BenchmarkTarget(
+        target_id="silent",
+        target_type="cli",
+        command=["python", "-c", "pass"],
+    )
+    result = target.invoke(prompt, workspace, output, 5)
+    assert result.status == "NO_OUTPUT"
+    assert result.output_content == ""
+
+
+def test_cli_invalid_utf8_output_file_decoded_with_replace(temp_dir: Path) -> None:
+    prompt = temp_dir / "prompt.md"
+    prompt.write_text("input", encoding="utf-8")
+    output = temp_dir / "output.md"
+    workspace = temp_dir / "workspace"
+    workspace.mkdir()
+
+    # Write invalid UTF-8 bytes directly to the output file.
+    output.write_bytes(b"\xff\xfe\x00hello")
+
+    target = BenchmarkTarget(
+        target_id="invalid-utf8",
+        target_type="cli",
+        command=["python", "-c", "pass"],
+    )
+    result = target.invoke(prompt, workspace, output, 5)
+    assert result.status == "PASS"
+    assert "hello" in result.output_content
+    assert "\ufffd" in result.output_content
+
+
+def test_cli_output_path_is_directory_falls_back_to_stdout(temp_dir: Path) -> None:
+    prompt = temp_dir / "prompt.md"
+    prompt.write_text("input", encoding="utf-8")
+    output = temp_dir / "output_dir"
+    output.mkdir()
+    workspace = temp_dir / "workspace"
+    workspace.mkdir()
+
+    target = BenchmarkTarget(
+        target_id="dir-output",
+        target_type="cli",
+        command=["python", "-c", "print('fallback stdout')"],
+    )
+    result = target.invoke(prompt, workspace, output, 5)
+    assert result.status == "PASS"
+    assert result.output_content.strip() == "fallback stdout"
+
+
+def test_load_targets_scalar_string_command_raises(tmp_path: Path) -> None:
+    path = tmp_path / "targets.yaml"
+    path.write_text(
+        """
+targets:
+  - id: bad
+    type: cli
+    command: echo hi
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="list of strings"):
+        load_targets(path)
+
+
+def test_load_targets_command_with_non_string_element_raises(tmp_path: Path) -> None:
+    path = tmp_path / "targets.yaml"
+    path.write_text(
+        """
+targets:
+  - id: bad
+    type: cli
+    command: ["echo", 123]
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="list of strings"):
+        load_targets(path)
+
+
+def test_load_targets_non_numeric_timeout_raises(tmp_path: Path) -> None:
+    path = tmp_path / "targets.yaml"
+    path.write_text(
+        """
+targets:
+  - id: bad
+    type: cli
+    command: ["echo", "hi"]
+    timeout: "60s"
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="positive integer"):
+        load_targets(path)
+
+
+def test_load_targets_yaml_root_list_raises(tmp_path: Path) -> None:
+    path = tmp_path / "targets.yaml"
+    path.write_text(
+        """
+- targets:
+    - id: bad
+      type: cli
+      command: ["echo", "hi"]
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="mapping at the top level"):
+        load_targets(path)

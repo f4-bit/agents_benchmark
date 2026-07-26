@@ -1,4 +1,3 @@
-import pytest
 from auth import authenticate
 
 
